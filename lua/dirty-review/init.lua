@@ -179,6 +179,8 @@ function M.review()
 		for _, o in ipairs(orphaned) do
 			table.insert(lines, "### " .. o.key)
 			table.insert(lines, "")
+			table.insert(lines, "**Comments:**")
+			table.insert(lines, "")
 			for comment_line in o.comments:gmatch("[^\n]*") do
 				table.insert(lines, comment_line)
 			end
