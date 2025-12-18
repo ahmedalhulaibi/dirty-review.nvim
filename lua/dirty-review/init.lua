@@ -191,6 +191,10 @@ function M.review()
 		vim.bo.modifiable = true
 		vim.api.nvim_buf_set_lines(existing_buf, 0, -1, false, lines)
 	else
+		-- If in a special buffer (like NeoTree), go to previous window first
+		if vim.bo.buftype ~= "" then
+			vim.cmd("wincmd p")
+		end
 		vim.cmd("enew")
 		local buf = vim.api.nvim_get_current_buf()
 		vim.bo[buf].buftype = "nofile"
