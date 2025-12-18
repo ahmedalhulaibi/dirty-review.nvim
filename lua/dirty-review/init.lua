@@ -188,14 +188,17 @@ function M.review()
 
 	if existing_buf and vim.api.nvim_buf_is_valid(existing_buf) then
 		vim.api.nvim_set_current_buf(existing_buf)
+		vim.bo.modifiable = true
 		vim.api.nvim_buf_set_lines(existing_buf, 0, -1, false, lines)
 	else
 		vim.cmd("enew")
-		vim.bo.buftype = "nofile"
-		vim.bo.filetype = "markdown"
+		local buf = vim.api.nvim_get_current_buf()
+		vim.bo[buf].buftype = "nofile"
+		vim.bo[buf].filetype = "markdown"
+		vim.bo[buf].modifiable = true
 		vim.wo.foldenable = false
-		vim.api.nvim_buf_set_name(0, buffer_name)
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+		vim.api.nvim_buf_set_name(buf, buffer_name)
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 	end
 
 	vim.notify("Review updated!")
