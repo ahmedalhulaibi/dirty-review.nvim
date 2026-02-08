@@ -191,6 +191,13 @@ function M.add_comment(visual)
 			comment = comment,
 		})
 		save_comments()
+
+		-- Refresh inline display if visible for this buffer
+		local buf = vim.api.nvim_get_current_buf()
+		if M.inline_visible[buf] then
+			show_inline_comments()
+		end
+
 		if start_line == end_line then
 			vim.notify(string.format("Comment added: %s:%d", file, start_line))
 		else
