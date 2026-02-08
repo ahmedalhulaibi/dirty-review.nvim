@@ -3,10 +3,10 @@ local M = {}
 M.config = {
 	keymap_review = "<leader>gR",
 	keymap_copy_path = "<leader>yL",
-	keymap_add_comment = "<leader>rc",
-	keymap_show_comments = "<leader>rs",
-	keymap_yank_comments = "<leader>ry",
-	keymap_clear_comments = "<leader>rx",
+	keymap_add_comment = "<leader>grc",
+	keymap_show_comments = "<leader>grs",
+	keymap_yank_comments = "<leader>gry",
+	keymap_clear_comments = "<leader>grx",
 }
 
 -- Store comments in memory
@@ -169,12 +169,29 @@ function M.show_comments()
 		table.insert(lines, "")
 	end
 
-	vim.cmd("vsplit")
-	local buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-	vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-	vim.api.nvim_buf_set_name(buf, "review-comments.md")
-	vim.api.nvim_win_set_buf(0, buf)
+	-- Check if buffer already exists
+	local buf_name = "review-comments.md"
+	local existing_buf = vim.fn.bufnr(buf_name)
+
+	if existing_buf ~= -1 then
+		-- Buffer exists, find window or open in split
+		local win_id = vim.fn.bufwinid(existing_buf)
+		if win_id ~= -1 then
+			vim.api.nvim_set_current_win(win_id)
+		else
+			vim.cmd("vsplit")
+			vim.api.nvim_win_set_buf(0, existing_buf)
+		end
+		vim.api.nvim_buf_set_lines(existing_buf, 0, -1, false, lines)
+	else
+		-- Create new buffer
+		vim.cmd("vsplit")
+		local buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.bo[buf].filetype = "markdown"
+		vim.api.nvim_buf_set_name(buf, buf_name)
+		vim.api.nvim_win_set_buf(0, buf)
+	end
 end
 
 -- Yank all comments as markdown to clipboard
