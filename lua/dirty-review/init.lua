@@ -71,8 +71,8 @@ local function show_inline_comments()
 	local count = 0
 	for _, c in ipairs(M.comments) do
 		if c.file == filepath then
-			-- Use start_line for placement (0-indexed for extmarks)
-			local line = c.start_line - 1
+			-- Use end_line for placement so comment appears below the selection
+			local line = (c.end_line or c.start_line) - 1
 			if line >= 0 and line < vim.api.nvim_buf_line_count(buf) then
 				vim.api.nvim_buf_set_extmark(buf, ns_id, line, 0, {
 					virt_lines = {
@@ -81,6 +81,7 @@ local function show_inline_comments()
 							{ c.comment, "DiagnosticInfo" },
 						},
 					},
+					virt_lines_above = false, -- render below the line
 				})
 				count = count + 1
 			end
