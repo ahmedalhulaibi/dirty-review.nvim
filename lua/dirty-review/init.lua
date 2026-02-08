@@ -427,7 +427,10 @@ function M.merge_external()
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, merged_lines)
 
 	if exit_code == 0 then
-		vim.notify("Merged cleanly")
+		-- Auto-write to checkpoint the merge and avoid subsequent conflicts
+		vim.cmd("silent write!")
+		vim.b[buf].dirty_review_mtime = vim.fn.getftime(file)
+		vim.notify("Merged cleanly and saved")
 	else
 		-- exit_code > 0 means conflicts (number of conflicts)
 		vim.notify(string.format("Merged with %d conflict(s) - search for <<<<<<<", exit_code), vim.log.levels.WARN)
