@@ -7,10 +7,17 @@ M.config = {
 	keymap_show_comments = "<leader>grs",
 	keymap_yank_comments = "<leader>gry",
 	keymap_clear_comments = "<leader>grx",
+	keymap_toggle_inline = "<leader>gri",
 }
 
 -- Store comments in memory
 M.comments = {}
+
+-- Namespace for virtual text
+local ns_id = vim.api.nvim_create_namespace("dirty_review_comments")
+
+-- Track inline visibility state per buffer
+M.inline_visible = {}
 
 -- Get path to persist comments (in .git directory of current repo)
 local function get_comments_file()
@@ -277,7 +284,69 @@ function M.clear_comments()
 	local count = #M.comments
 	M.comments = {}
 	save_comments()
+	-- Clear all inline displays
+	for buf, _ in pairs(M.inline_visible) do
+		if vim.api.nvim_buf_is_valid(buf) then
+			vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+		end
+	end
+	M.inline_visible = {}
 	vim.notify(string.format("Cleared %d comments", count))
+end
+
+-- Show inline comments for current buffer
+local function show_inline_comments()
+	local buf = vim.api.nvim_get_current_buf()
+	local filepath = vim.fn.expand("%:.")
+
+	-- Clear existing
+	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+
+	local count = 0
+	for _, c in ipairs(M.comments) do
+		if c.file == filepath then
+			-- Use start_line for placement (0-indexed for extmarks)
+			local line = c.start_line - 1
+			if line >= 0 and line < vim.api.nvim_buf_line_count(buf) then
+				vim.api.nvim_buf_set_extmark(buf, ns_id, line, 0, {
+					virt_lines = {
+						{
+							{ "  💬 ", "DiagnosticInfo" },
+							{ c.comment, "DiagnosticInfo" },
+						},
+					},
+				})
+				count = count + 1
+			end
+		end
+	end
+
+	M.inline_visible[buf] = true
+	return count
+end
+
+-- Hide inline comments for current buffer
+local function hide_inline_comments()
+	local buf = vim.api.nvim_get_current_buf()
+	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+	M.inline_visible[buf] = false
+end
+
+-- Toggle inline comments for current buffer
+function M.toggle_inline()
+	local buf = vim.api.nvim_get_current_buf()
+
+	if M.inline_visible[buf] then
+		hide_inline_comments()
+		vim.notify("Inline comments hidden")
+	else
+		local count = show_inline_comments()
+		if count > 0 then
+			vim.notify(string.format("Showing %d inline comments", count))
+		else
+			vim.notify("No comments for this file")
+		end
+	end
 end
 
 function M.setup(opts)
@@ -304,6 +373,7 @@ function M.setup(opts)
 	vim.keymap.set("n", M.config.keymap_show_comments, M.show_comments, { desc = "Show all review comments" })
 	vim.keymap.set("n", M.config.keymap_yank_comments, M.yank_comments, { desc = "Yank comments as markdown" })
 	vim.keymap.set("n", M.config.keymap_clear_comments, M.clear_comments, { desc = "Clear all comments" })
+	vim.keymap.set("n", M.config.keymap_toggle_inline, M.toggle_inline, { desc = "Toggle inline comments" })
 end
 
 return M
