@@ -500,6 +500,45 @@ function M.setup(opts)
 
 	-- Auto-prompt for merge when file changes externally
 	if M.config.auto_merge_prompt then
+		-- Periodically check for external changes (when cursor is idle)
+		vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+			pattern = "*",
+			callback = function()
+				if vim.bo.buftype == "" then
+					vim.cmd("silent! checktime")
+				end
+			end,
+		})
+
+		-- Also check before writing to catch changes missed by checktime
+		vim.api.nvim_create_autocmd("BufWritePre", {
+			pattern = "*",
+			callback = function(ev)
+				local file = vim.fn.expand("%:p")
+				if vim.fn.filereadable(file) == 0 then
+					return
+				end
+
+				-- Compare file mtime with buffer changedtick
+				local buf_time = vim.b[ev.buf].dirty_review_mtime or 0
+				local file_time = vim.fn.getftime(file)
+
+				if file_time > buf_time and vim.bo[ev.buf].modified then
+					-- File changed since we last checked, trigger checktime
+					vim.cmd("checktime")
+				end
+			end,
+		})
+
+		-- Track file mtime when buffer is read
+		vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
+			pattern = "*",
+			callback = function(ev)
+				local file = vim.fn.expand("%:p")
+				vim.b[ev.buf].dirty_review_mtime = vim.fn.getftime(file)
+			end,
+		})
+
 		vim.api.nvim_create_autocmd("FileChangedShell", {
 			pattern = "*",
 			callback = function(ev)
