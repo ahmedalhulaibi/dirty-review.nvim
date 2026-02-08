@@ -60,6 +60,44 @@ local function load_comments()
 	end
 end
 
+-- Show inline comments for current buffer
+local function show_inline_comments()
+	local buf = vim.api.nvim_get_current_buf()
+	local filepath = vim.fn.expand("%:.")
+
+	-- Clear existing
+	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+
+	local count = 0
+	for _, c in ipairs(M.comments) do
+		if c.file == filepath then
+			-- Use start_line for placement (0-indexed for extmarks)
+			local line = c.start_line - 1
+			if line >= 0 and line < vim.api.nvim_buf_line_count(buf) then
+				vim.api.nvim_buf_set_extmark(buf, ns_id, line, 0, {
+					virt_lines = {
+						{
+							{ "  💬 ", "DiagnosticInfo" },
+							{ c.comment, "DiagnosticInfo" },
+						},
+					},
+				})
+				count = count + 1
+			end
+		end
+	end
+
+	M.inline_visible[buf] = true
+	return count
+end
+
+-- Hide inline comments for current buffer
+local function hide_inline_comments()
+	local buf = vim.api.nvim_get_current_buf()
+	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+	M.inline_visible[buf] = false
+end
+
 function M.copy_path_with_line()
 	local path = vim.fn.expand("%:.")
 	local result
@@ -299,44 +337,6 @@ function M.clear_comments()
 	end
 	M.inline_visible = {}
 	vim.notify(string.format("Cleared %d comments", count))
-end
-
--- Show inline comments for current buffer
-local function show_inline_comments()
-	local buf = vim.api.nvim_get_current_buf()
-	local filepath = vim.fn.expand("%:.")
-
-	-- Clear existing
-	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-
-	local count = 0
-	for _, c in ipairs(M.comments) do
-		if c.file == filepath then
-			-- Use start_line for placement (0-indexed for extmarks)
-			local line = c.start_line - 1
-			if line >= 0 and line < vim.api.nvim_buf_line_count(buf) then
-				vim.api.nvim_buf_set_extmark(buf, ns_id, line, 0, {
-					virt_lines = {
-						{
-							{ "  💬 ", "DiagnosticInfo" },
-							{ c.comment, "DiagnosticInfo" },
-						},
-					},
-				})
-				count = count + 1
-			end
-		end
-	end
-
-	M.inline_visible[buf] = true
-	return count
-end
-
--- Hide inline comments for current buffer
-local function hide_inline_comments()
-	local buf = vim.api.nvim_get_current_buf()
-	vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-	M.inline_visible[buf] = false
 end
 
 -- Toggle inline comments for current buffer
