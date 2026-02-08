@@ -112,23 +112,25 @@ function M.review()
 end
 
 -- Add a comment at the current line (or visual selection)
-function M.add_comment()
+-- Use visual=true when called from visual mode keymap
+function M.add_comment(visual)
 	local file = vim.fn.expand("%:.")
 	local snippet
 	local start_line, end_line
 
-	if vim.fn.mode() == "n" then
-		start_line = vim.fn.line(".")
-		end_line = start_line
-		snippet = vim.fn.getline(".")
-	else
-		start_line = vim.fn.line("v")
-		end_line = vim.fn.line(".")
+	if visual then
+		-- Use visual selection marks
+		start_line = vim.fn.line("'<")
+		end_line = vim.fn.line("'>")
 		if start_line > end_line then
 			start_line, end_line = end_line, start_line
 		end
 		snippet = table.concat(vim.fn.getline(start_line, end_line), "\n")
-		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
+	else
+		-- Single line in normal mode
+		start_line = vim.fn.line(".")
+		end_line = start_line
+		snippet = vim.fn.getline(".")
 	end
 
 	local comment = vim.fn.input("Comment: ")
@@ -140,7 +142,11 @@ function M.add_comment()
 			snippet = snippet,
 			comment = comment,
 		})
-		vim.notify(string.format("Comment added: %s:%d", file, start_line))
+		if start_line == end_line then
+			vim.notify(string.format("Comment added: %s:%d", file, start_line))
+		else
+			vim.notify(string.format("Comment added: %s:%d-%d", file, start_line, end_line))
+		end
 	end
 end
 
@@ -241,12 +247,14 @@ function M.setup(opts)
 		{ desc = "Copy file path with line number" }
 	)
 	vim.keymap.set("n", M.config.keymap_review, M.review, { desc = "Review local changes like a PR" })
-	vim.keymap.set(
-		{ "n", "v" },
-		M.config.keymap_add_comment,
-		M.add_comment,
-		{ desc = "Add review comment at line" }
-	)
+	vim.keymap.set("n", M.config.keymap_add_comment, function()
+		M.add_comment(false)
+	end, { desc = "Add review comment at line" })
+	vim.keymap.set("v", M.config.keymap_add_comment, function()
+		-- Exit visual mode first so marks are set
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "nx", false)
+		M.add_comment(true)
+	end, { desc = "Add review comment for selection" })
 	vim.keymap.set("n", M.config.keymap_show_comments, M.show_comments, { desc = "Show all review comments" })
 	vim.keymap.set("n", M.config.keymap_yank_comments, M.yank_comments, { desc = "Yank comments as markdown" })
 	vim.keymap.set("n", M.config.keymap_clear_comments, M.clear_comments, { desc = "Clear all comments" })
