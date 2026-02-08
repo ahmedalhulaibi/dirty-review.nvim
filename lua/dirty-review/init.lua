@@ -360,25 +360,44 @@ function M.toggle_inline()
 	end
 end
 
--- Three-way merge: buffer (yours) + disk (theirs) + git HEAD (base)
+-- Shadow base directory for storing file snapshots
+local shadow_dir = vim.fn.stdpath("cache") .. "/dirty-review-shadows"
+
+-- Get shadow path for a file
+local function get_shadow_path(file)
+	-- Create a unique path based on the file's absolute path
+	local encoded = file:gsub("/", "%%"):gsub(":", "%%")
+	return shadow_dir .. "/" .. encoded
+end
+
+-- Update shadow base file (called on buffer open and save)
+local function update_shadow(file)
+	if vim.fn.filereadable(file) == 0 then
+		return
+	end
+	vim.fn.mkdir(shadow_dir, "p")
+	local shadow = get_shadow_path(file)
+	vim.fn.system("cp " .. vim.fn.shellescape(file) .. " " .. vim.fn.shellescape(shadow))
+end
+
+-- Three-way merge: buffer (yours) + disk (theirs) + shadow (base)
 function M.merge_external()
 	local buf = vim.api.nvim_get_current_buf()
 	local file = vim.fn.expand("%:p")
-	local relpath = vim.fn.expand("%:.")
+	local shadow = get_shadow_path(file)
 
 	-- Check if buffer is modified
 	if not vim.bo[buf].modified then
 		-- No local changes, just reload
 		vim.cmd("edit!")
+		update_shadow(file)
 		vim.notify("Reloaded (no local changes)")
 		return
 	end
 
-	-- Check if file is tracked by git
-	vim.fn.system("git ls-files --error-unmatch " .. vim.fn.shellescape(relpath) .. " 2>/dev/null")
-	if vim.v.shell_error ~= 0 then
-		-- Not a git file, can't do three-way merge
-		vim.notify("Not a git-tracked file, cannot merge", vim.log.levels.WARN)
+	-- Check if shadow exists
+	if vim.fn.filereadable(shadow) == 0 then
+		vim.notify("No shadow base found, cannot merge. Try :e! to reload.", vim.log.levels.WARN)
 		return
 	end
 
@@ -387,31 +406,20 @@ function M.merge_external()
 	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 	vim.fn.writefile(lines, yours)
 
-	-- Get base from git HEAD
-	local base = vim.fn.tempname()
-	local base_content = vim.fn.system("git show HEAD:" .. vim.fn.shellescape(relpath))
-	if vim.v.shell_error ~= 0 then
-		-- File is new (not in HEAD), use empty base
-		base_content = ""
-	end
-	vim.fn.writefile(vim.split(base_content, "\n", { plain = true }), base)
-
-	-- Theirs is the current file on disk
-	-- Run git merge-file: merges theirs into yours using base
+	-- Run git merge-file: yours + base (shadow) + theirs (disk)
 	-- -p outputs to stdout instead of modifying file
 	local result = vim.fn.system(
 		"git merge-file -p "
 			.. vim.fn.shellescape(yours)
 			.. " "
-			.. vim.fn.shellescape(base)
+			.. vim.fn.shellescape(shadow)
 			.. " "
 			.. vim.fn.shellescape(file)
 	)
 	local exit_code = vim.v.shell_error
 
-	-- Clean up temp files
+	-- Clean up temp file
 	vim.fn.delete(yours)
-	vim.fn.delete(base)
 
 	if exit_code < 0 then
 		vim.notify("Merge failed: " .. result, vim.log.levels.ERROR)
@@ -427,9 +435,10 @@ function M.merge_external()
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, merged_lines)
 
 	if exit_code == 0 then
-		-- Auto-write to checkpoint the merge and avoid subsequent conflicts
+		-- Auto-write to checkpoint the merge
 		vim.cmd("silent write!")
-		vim.b[buf].dirty_review_mtime = vim.fn.getftime(file)
+		-- Update shadow to the new merged content
+		update_shadow(file)
 		vim.notify("Merged cleanly and saved")
 	else
 		-- exit_code > 0 means conflicts (number of conflicts)
@@ -442,20 +451,20 @@ end
 -- Open three-way diff view instead of auto-merging
 function M.diff_external()
 	local file = vim.fn.expand("%:p")
-	local relpath = vim.fn.expand("%:.")
+	local shadow = get_shadow_path(file)
 
 	-- Save buffer content to temp file (yours)
 	local yours = vim.fn.tempname() .. "_YOURS"
 	local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
 	vim.fn.writefile(lines, yours)
 
-	-- Get base from git HEAD
+	-- Use shadow as base, copy to temp with label
 	local base = vim.fn.tempname() .. "_BASE"
-	local base_content = vim.fn.system("git show HEAD:" .. vim.fn.shellescape(relpath))
-	if vim.v.shell_error ~= 0 then
-		base_content = ""
+	if vim.fn.filereadable(shadow) == 1 then
+		vim.fn.system("cp " .. vim.fn.shellescape(shadow) .. " " .. vim.fn.shellescape(base))
+	else
+		vim.fn.writefile({}, base)
 	end
-	vim.fn.writefile(vim.split(base_content, "\n", { plain = true }), base)
 
 	-- Copy theirs (disk version)
 	local theirs = vim.fn.tempname() .. "_THEIRS"
@@ -467,7 +476,7 @@ function M.diff_external()
 	vim.cmd("vertical diffsplit " .. vim.fn.fnameescape(theirs))
 	vim.cmd("wincmd t") -- go to first window (yours)
 
-	vim.notify("Left: yours | Middle: base (HEAD) | Right: theirs (disk)")
+	vim.notify("Left: yours | Middle: base (last save) | Right: theirs (disk)")
 end
 
 function M.setup(opts)
@@ -500,6 +509,18 @@ function M.setup(opts)
 	-- Create user commands
 	vim.api.nvim_create_user_command("DirtyMerge", M.merge_external, { desc = "Three-way merge external changes" })
 	vim.api.nvim_create_user_command("DirtyDiff", M.diff_external, { desc = "Three-way diff external changes" })
+
+	-- Track shadow base files for merge
+	vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
+		pattern = "*",
+		callback = function()
+			local file = vim.fn.expand("%:p")
+			-- Only track real files, not special buffers
+			if vim.bo.buftype == "" and vim.fn.filereadable(file) == 1 then
+				update_shadow(file)
+			end
+		end,
+	})
 
 	-- Prompt for merge only on buffer/focus switch (not while actively editing)
 	if M.config.auto_merge_prompt then
