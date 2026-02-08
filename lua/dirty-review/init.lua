@@ -3,7 +3,14 @@ local M = {}
 M.config = {
 	keymap_review = "<leader>gR",
 	keymap_copy_path = "<leader>yL",
+	keymap_add_comment = "<leader>rc",
+	keymap_show_comments = "<leader>rs",
+	keymap_yank_comments = "<leader>ry",
+	keymap_clear_comments = "<leader>rx",
 }
+
+-- Store comments in memory
+M.comments = {}
 
 function M.copy_path_with_line()
 	local path = vim.fn.expand("%:.")
@@ -104,6 +111,109 @@ function M.review()
 	vim.notify("Review: " .. buffer_name)
 end
 
+-- Add a comment at the current line (or visual selection)
+function M.add_comment()
+	local file = vim.fn.expand("%:.")
+	local snippet
+	local start_line, end_line
+
+	if vim.fn.mode() == "n" then
+		start_line = vim.fn.line(".")
+		end_line = start_line
+		snippet = vim.fn.getline(".")
+	else
+		start_line = vim.fn.line("v")
+		end_line = vim.fn.line(".")
+		if start_line > end_line then
+			start_line, end_line = end_line, start_line
+		end
+		snippet = table.concat(vim.fn.getline(start_line, end_line), "\n")
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", false)
+	end
+
+	local comment = vim.fn.input("Comment: ")
+	if comment ~= "" then
+		table.insert(M.comments, {
+			file = file,
+			start_line = start_line,
+			end_line = end_line,
+			snippet = snippet,
+			comment = comment,
+		})
+		vim.notify(string.format("Comment added: %s:%d", file, start_line))
+	end
+end
+
+-- Show all comments in a scratch buffer
+function M.show_comments()
+	if #M.comments == 0 then
+		vim.notify("No comments yet")
+		return
+	end
+
+	local lines = { "## Review Comments", "" }
+	for _, c in ipairs(M.comments) do
+		local location
+		if c.start_line == c.end_line then
+			location = string.format("**%s:%d**", c.file, c.start_line)
+		else
+			location = string.format("**%s:%d-%d**", c.file, c.start_line, c.end_line)
+		end
+		table.insert(lines, location)
+		table.insert(lines, "```")
+		for snippet_line in c.snippet:gmatch("[^\n]+") do
+			table.insert(lines, snippet_line)
+		end
+		table.insert(lines, "```")
+		table.insert(lines, "> " .. c.comment)
+		table.insert(lines, "")
+	end
+
+	vim.cmd("vsplit")
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+	vim.api.nvim_buf_set_name(buf, "review-comments.md")
+	vim.api.nvim_win_set_buf(0, buf)
+end
+
+-- Yank all comments as markdown to clipboard
+function M.yank_comments()
+	if #M.comments == 0 then
+		vim.notify("No comments to yank")
+		return
+	end
+
+	local lines = { "## Review Comments", "" }
+	for _, c in ipairs(M.comments) do
+		local location
+		if c.start_line == c.end_line then
+			location = string.format("**%s:%d**", c.file, c.start_line)
+		else
+			location = string.format("**%s:%d-%d**", c.file, c.start_line, c.end_line)
+		end
+		table.insert(lines, location)
+		table.insert(lines, "```")
+		for snippet_line in c.snippet:gmatch("[^\n]+") do
+			table.insert(lines, snippet_line)
+		end
+		table.insert(lines, "```")
+		table.insert(lines, "> " .. c.comment)
+		table.insert(lines, "")
+	end
+
+	local content = table.concat(lines, "\n")
+	vim.fn.setreg("+", content)
+	vim.notify(string.format("Yanked %d comments to clipboard", #M.comments))
+end
+
+-- Clear all comments
+function M.clear_comments()
+	local count = #M.comments
+	M.comments = {}
+	vim.notify(string.format("Cleared %d comments", count))
+end
+
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
@@ -114,6 +224,15 @@ function M.setup(opts)
 		{ desc = "Copy file path with line number" }
 	)
 	vim.keymap.set("n", M.config.keymap_review, M.review, { desc = "Review local changes like a PR" })
+	vim.keymap.set(
+		{ "n", "v" },
+		M.config.keymap_add_comment,
+		M.add_comment,
+		{ desc = "Add review comment at line" }
+	)
+	vim.keymap.set("n", M.config.keymap_show_comments, M.show_comments, { desc = "Show all review comments" })
+	vim.keymap.set("n", M.config.keymap_yank_comments, M.yank_comments, { desc = "Yank comments as markdown" })
+	vim.keymap.set("n", M.config.keymap_clear_comments, M.clear_comments, { desc = "Clear all comments" })
 end
 
 return M
