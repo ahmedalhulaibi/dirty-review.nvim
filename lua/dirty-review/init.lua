@@ -12,6 +12,47 @@ M.config = {
 -- Store comments in memory
 M.comments = {}
 
+-- Get path to persist comments (in .git directory of current repo)
+local function get_comments_file()
+	local git_dir = vim.fn.systemlist("git rev-parse --git-dir")[1]
+	if vim.v.shell_error ~= 0 or not git_dir then
+		return nil
+	end
+	return git_dir .. "/review-comments.json"
+end
+
+-- Save comments to file
+local function save_comments()
+	local path = get_comments_file()
+	if not path then
+		return
+	end
+	local file = io.open(path, "w")
+	if file then
+		file:write(vim.fn.json_encode(M.comments))
+		file:close()
+	end
+end
+
+-- Load comments from file
+local function load_comments()
+	local path = get_comments_file()
+	if not path then
+		return
+	end
+	local file = io.open(path, "r")
+	if file then
+		local content = file:read("*a")
+		file:close()
+		if content and content ~= "" then
+			local ok, data = pcall(vim.fn.json_decode, content)
+			if ok and type(data) == "table" then
+				M.comments = data
+			end
+		end
+	end
+end
+
 function M.copy_path_with_line()
 	local path = vim.fn.expand("%:.")
 	local result
@@ -142,6 +183,7 @@ function M.add_comment(visual)
 			snippet = snippet,
 			comment = comment,
 		})
+		save_comments()
 		if start_line == end_line then
 			vim.notify(string.format("Comment added: %s:%d", file, start_line))
 		else
@@ -234,11 +276,15 @@ end
 function M.clear_comments()
 	local count = #M.comments
 	M.comments = {}
+	save_comments()
 	vim.notify(string.format("Cleared %d comments", count))
 end
 
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+	-- Load any persisted comments
+	load_comments()
 
 	vim.keymap.set(
 		{ "n", "v" },
