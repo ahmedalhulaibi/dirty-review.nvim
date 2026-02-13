@@ -128,7 +128,9 @@ function M.review(base, head)
 	if has_neotree then
 		local neo_cmd = require("neo-tree.command")
 		neo_cmd.execute({ action = "close" })
-		neo_cmd.execute({ action = "focus", source = "git_status", git_base = base })
+		vim.schedule(function()
+			neo_cmd.execute({ action = "focus", source = "git_status", git_base = base })
+		end)
 	end
 
 	if has_gitsigns then
@@ -145,7 +147,9 @@ function M.reset_review()
 	if has_neotree then
 		local neo_cmd = require("neo-tree.command")
 		neo_cmd.execute({ action = "close" })
-		neo_cmd.execute({ action = "focus", source = "git_status" })
+		vim.schedule(function()
+			neo_cmd.execute({ action = "focus", source = "git_status" })
+		end)
 	end
 
 	if has_gitsigns then
