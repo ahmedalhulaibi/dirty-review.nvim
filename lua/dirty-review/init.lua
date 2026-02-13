@@ -126,11 +126,13 @@ function M.review(base, head)
 	local has_gitsigns = pcall(require, "gitsigns")
 
 	if has_neotree then
-		vim.cmd("Neotree git_base=" .. base .. " git_status")
+		local neo_cmd = require("neo-tree.command")
+		neo_cmd.execute({ action = "close" })
+		neo_cmd.execute({ action = "focus", source = "git_status", git_base = base })
 	end
 
 	if has_gitsigns then
-		vim.cmd("Gitsigns change_base " .. base)
+		require("gitsigns").change_base(base, true)
 	end
 
 	vim.notify("Review base set to: " .. base)
@@ -141,11 +143,13 @@ function M.reset_review()
 	local has_gitsigns = pcall(require, "gitsigns")
 
 	if has_neotree then
-		vim.cmd("Neotree git_status")
+		local neo_cmd = require("neo-tree.command")
+		neo_cmd.execute({ action = "close" })
+		neo_cmd.execute({ action = "focus", source = "git_status" })
 	end
 
 	if has_gitsigns then
-		vim.cmd("Gitsigns reset_base")
+		require("gitsigns").reset_base(true)
 	end
 
 	vim.notify("Review reset to defaults")
