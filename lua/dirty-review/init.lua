@@ -119,83 +119,36 @@ function M.copy_path_with_line()
 	vim.notify("Copied: " .. result)
 end
 
-function M.review()
-	local diff_output = vim.fn.systemlist("git diff HEAD")
+function M.review(base, head)
+	base = base or "HEAD"
 
-	if #diff_output == 0 then
-		vim.notify("No uncommitted changes")
-		return
+	local has_neotree = pcall(require, "neo-tree")
+	local has_gitsigns = pcall(require, "gitsigns")
+
+	if has_neotree then
+		vim.cmd("Neotree git_base=" .. base .. " git_status")
 	end
 
-	local sha = vim.fn.systemlist("git rev-parse --short HEAD")[1]
-	local timestamp = os.time()
-	local buffer_name = string.format("review_%s_dirty_%d.md", sha, timestamp)
-
-	-- Parse diff into hunks
-	local hunks = {}
-	local current_file = ""
-	local hunk_lines = {}
-	local hunk_header = ""
-
-	local function flush_hunk()
-		if #hunk_lines > 0 then
-			table.insert(hunks, {
-				file = current_file,
-				header = hunk_header,
-				content = table.concat(hunk_lines, "\n"),
-			})
-			hunk_lines = {}
-		end
+	if has_gitsigns then
+		vim.cmd("Gitsigns change_base " .. base)
 	end
 
-	for _, line in ipairs(diff_output) do
-		if line:match("^diff %-%-git") then
-			flush_hunk()
-		elseif line:match("^%+%+%+ b/") then
-			current_file = line:sub(7)
-		elseif line:match("^@@") then
-			flush_hunk()
-			hunk_header = line:match("^(@@ .* @@)")
-		elseif
-			current_file ~= ""
-			and not line:match("^index ")
-			and not line:match("^%-%-%-")
-			and not line:match("^%+%+%+")
-		then
-			table.insert(hunk_lines, line)
-		end
-	end
-	flush_hunk()
+	vim.notify("Review base set to: " .. base)
+end
 
-	-- Build output
-	local lines = {}
-	for _, hunk in ipairs(hunks) do
-		table.insert(lines, "### " .. hunk.file .. " " .. hunk.header)
-		table.insert(lines, "")
-		table.insert(lines, "```diff")
-		for diff_line in hunk.content:gmatch("[^\n]+") do
-			table.insert(lines, diff_line)
-		end
-		table.insert(lines, "```")
-		table.insert(lines, "")
-		table.insert(lines, "**Comments:**")
-		table.insert(lines, "")
-		table.insert(lines, "")
+function M.reset_review()
+	local has_neotree = pcall(require, "neo-tree")
+	local has_gitsigns = pcall(require, "gitsigns")
+
+	if has_neotree then
+		vim.cmd("Neotree git_status")
 	end
 
-	-- If in a special buffer (like NeoTree), go to previous window first
-	if vim.bo.buftype ~= "" then
-		vim.cmd("wincmd p")
+	if has_gitsigns then
+		vim.cmd("Gitsigns reset_base")
 	end
 
-	vim.cmd("enew")
-	local buf = vim.api.nvim_get_current_buf()
-	vim.bo[buf].filetype = "markdown"
-	vim.wo.foldenable = false
-	vim.api.nvim_buf_set_name(buf, buffer_name)
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-
-	vim.notify("Review: " .. buffer_name)
+	vim.notify("Review reset to defaults")
 end
 
 -- Add a comment at the current line (or visual selection)
@@ -369,7 +322,13 @@ function M.setup(opts)
 		M.copy_path_with_line,
 		{ desc = "Copy file path with line number" }
 	)
-	vim.keymap.set("n", M.config.keymap_review, M.review, { desc = "Review local changes like a PR" })
+	vim.keymap.set("n", M.config.keymap_review, function()
+		vim.ui.input({ prompt = "Review base ref: ", default = "HEAD" }, function(input)
+			if input and input ~= "" then
+				M.review(input)
+			end
+		end)
+	end, { desc = "Review local changes like a PR" })
 	vim.keymap.set("n", M.config.keymap_add_comment, function()
 		M.add_comment(false)
 	end, { desc = "Add review comment at line" })
